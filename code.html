@@ -68,6 +68,12 @@ color:#fff;
 border:1px solid #333;
 margin-top:10px;
 }
+
+#error{
+color:#ff5555;
+margin-top:10px;
+font-size:14px;
+}
 </style>
 </head>
 
@@ -103,14 +109,17 @@ Paste existing LUT
 </div>
 
 <div class="card">
+
 <canvas id="chart"></canvas>
 
 <button onclick="exportLUT()">Export LUT</button>
 <button onclick="resetLine()">Reset Straight Line</button>
 
-<textarea id="output"></textarea>
-</div>
+<div id="error"></div>
 
+<textarea id="output"></textarea>
+
+</div>
 </div>
 
 <script>
@@ -119,13 +128,13 @@ let dpi=800;
 let poll=1000;
 let zoom=1;
 
-/* RAW ACCEL SAFE START */
 let points=[
 {x:0.001,y:1},
 {x:100,y:1}
 ];
 
 const ctx=document.getElementById("chart");
+const errorBox=document.getElementById("error");
 
 function calculateMaxSpeed(){
 return (dpi*poll/8000)*zoom;
@@ -135,7 +144,6 @@ const chart=new Chart(ctx,{
 type:"line",
 data:{
 datasets:[{
-label:"Curve",
 data:points,
 parsing:false,
 borderColor:"white",
@@ -161,23 +169,48 @@ ticks:{color:"white"},
 grid:{color:"#222"}
 }
 },
-plugins:{legend:{labels:{color:"white"}}}
+plugins:{legend:{display:false}}
 }
 });
 
+/* CURVE MODE */
 function updateCurveMode(){
-const mode=document.getElementById("curveMode").value;
 chart.data.datasets[0].tension =
-mode==="smooth"?0.4:0;
+document.getElementById("curveMode").value==="smooth"
+?0.4:0;
 chart.update();
 }
 
+/* SCALE */
 function applyScale(){
-dpi=Number(dpi.value)||800;
-poll=Number(poll.value)||1000;
+dpi=Number(document.getElementById("dpi").value)||800;
+poll=Number(document.getElementById("poll").value)||1000;
 
 chart.options.scales.x.max=calculateMaxSpeed();
 chart.update();
+}
+
+/* VALIDATION */
+function validateCurve(){
+
+if(points.length<2)
+return "Need at least 2 points";
+
+if(points[0].x<=0)
+return "First point X must be greater than 0";
+
+for(let i=0;i<points.length;i++){
+
+const p=points[i];
+
+if(isNaN(p.x)||isNaN(p.y))
+return "Invalid number detected";
+
+if(i>0 && p.x<=points[i-1].x)
+return "X values must increase left to right";
+}
+
+return null;
 }
 
 /* ZOOM */
@@ -189,16 +222,14 @@ chart.options.scales.x.max=calculateMaxSpeed();
 chart.update();
 });
 
-/* ADD POINT */
+/* ADD */
 ctx.onclick=e=>{
 const r=ctx.getBoundingClientRect();
 
 let x=chart.scales.x.getValueForPixel(e.clientX-r.left);
 let y=chart.scales.y.getValueForPixel(e.clientY-r.top);
 
-x=Math.max(0.001,x);
-
-points.push({x,y});
+points.push({x:Math.max(0.001,x),y});
 sortPoints();
 updateChart();
 };
@@ -206,43 +237,43 @@ updateChart();
 /* DELETE */
 ctx.oncontextmenu=e=>{
 e.preventDefault();
-
 const el=chart.getElementsAtEventForMode(
 e,'nearest',{intersect:true},false
 );
-
 if(el.length){
 points.splice(el[0].index,1);
 updateChart();
 }
 };
 
-/* DRAG SMOOTH */
-let dragging=null;
+/* DRAG */
+let drag=null;
 
 ctx.onmousedown=e=>{
 const el=chart.getElementsAtEventForMode(
 e,'nearest',{intersect:true},false
 );
-if(el.length) dragging=el[0].index;
+if(el.length) drag=el[0].index;
 };
 
 ctx.onmousemove=e=>{
-if(dragging===null) return;
+if(drag===null) return;
 
 const r=ctx.getBoundingClientRect();
 
-let x=chart.scales.x.getValueForPixel(e.clientX-r.left);
-let y=chart.scales.y.getValueForPixel(e.clientY-r.top);
+points[drag].x=Math.max(
+0.001,
+chart.scales.x.getValueForPixel(e.clientX-r.left)
+);
 
-points[dragging].x=Math.max(0.001,x);
-points[dragging].y=y;
+points[drag].y=
+chart.scales.y.getValueForPixel(e.clientY-r.top);
 
 sortPoints();
 updateChart();
 };
 
-window.onmouseup=()=>dragging=null;
+window.onmouseup=()=>drag=null;
 
 function sortPoints(){
 points.sort((a,b)=>a.x-b.x);
@@ -251,19 +282,19 @@ points.sort((a,b)=>a.x-b.x);
 function updateChart(){
 chart.data.datasets[0].data=points;
 chart.update();
+errorBox.textContent="";
 }
 
-/* IMPORT LUT */
+/* IMPORT */
 function importCurve(){
-const text=document.getElementById("importBox").value.trim();
+const text=document.getElementById("importBox").value;
 
 const newPts=[];
 
 text.split(";").forEach(p=>{
 if(!p) return;
 const [x,y]=p.split(",").map(Number);
-if(x>0 && !isNaN(y))
-newPts.push({x,y});
+if(x>0)newPts.push({x,y});
 });
 
 if(newPts.length){
@@ -273,17 +304,14 @@ updateChart();
 }
 }
 
-/* RAW ACCEL SAFE EXPORT */
+/* EXPORT WITH BLOCK */
 function exportLUT(){
 
-sortPoints();
+const err=validateCurve();
 
-/* enforce rules */
-points[0].x=Math.max(0.001,points[0].x);
-
-for(let i=1;i<points.length;i++){
-if(points[i].x<=points[i-1].x)
-points[i].x=points[i-1].x+0.001;
+if(err){
+errorBox.textContent="Export blocked: "+err;
+return;
 }
 
 const text=points
@@ -291,6 +319,7 @@ const text=points
 .join("");
 
 document.getElementById("output").value=text;
+errorBox.textContent="Export successful";
 }
 
 /* RESET */
@@ -305,6 +334,5 @@ updateChart();
 updateChart();
 
 </script>
-
 </body>
 </html>
