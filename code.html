@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <title>Raw Accel LUT Curve Maker</title>
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -16,17 +15,21 @@ text-align:center;
 }
 
 header{
-background:#111;
 padding:20px;
-font-size:26px;
+background:#111;
 }
 
-header img{
-height:60px;
-display:block;
-margin:auto;
-margin-bottom:10px;
+.logo{
+width:80px;
+height:80px;
+border-radius:50%;
+object-fit:cover;
+margin-bottom:8px;
+box-shadow:0 0 15px rgba(255,255,255,.2);
 }
+
+.title{font-size:26px;}
+.credit{font-size:14px;color:#aaa;}
 
 .container{
 width:90%;
@@ -47,7 +50,6 @@ color:#fff;
 border:1px solid #333;
 padding:6px;
 margin:5px;
-width:120px;
 }
 
 button{
@@ -62,17 +64,12 @@ cursor:pointer;
 
 textarea{
 width:100%;
-height:120px;
+height:150px;
 background:#000;
 color:#fff;
 border:1px solid #333;
 margin-top:10px;
-}
-
-#error{
-color:#ff5555;
-margin-top:10px;
-font-size:14px;
+font-family:monospace;
 }
 </style>
 </head>
@@ -80,32 +77,37 @@ font-size:14px;
 <body>
 
 <header>
-<img src="https://yt3.googleusercontent.com/G3NBG71dzJtbQ3ae2ERcVDRvXGEHaAlCO43-fnO-uilXeikc5mYWp2p2k4owzc4S5n0brzNC=s160-c-k-c0x00ffffff-no-rj">
-Raw Accel LUT Curve Maker
+
+<img class="logo"
+src="https://yt3.googleusercontent.com/G3NBG71dzJtbQ3ae2ERcVDRvXGEHaAlCO43-fnO-uilXeikc5mYWp2p2k4owzc4S5n0brzNC=s160-c-k-c0x00ffffff-no-rj">
+
+<div class="title">Raw Accel LUT Curve Maker</div>
+<div class="credit">Made by @igneswr</div>
+
 </header>
 
 <div class="container">
 
 <div class="card">
-DPI
-<input id="dpi" value="800">
+DPI <input id="dpi" value="800">
+Poll Rate <input id="poll" value="1000">
 
-Poll Rate
-<input id="poll" value="1000">
-
-Curve Mode
-<select id="curveMode" onchange="updateCurveMode()">
-<option value="linear">Sharp</option>
-<option value="smooth">Curvy</option>
+Curve Style
+<select id="curveStyle" onchange="updateCurveStyle()">
+<option value="0">Sharp Linear</option>
+<option value="0.35">Smooth</option>
+<option value="0.7">Very Smooth</option>
 </select>
 
 <button onclick="applyScale()">Apply Scale</button>
 </div>
 
 <div class="card">
-Paste existing LUT
-<textarea id="importBox"></textarea>
-<button onclick="importCurve()">Load Curve</button>
+Click add point<br>
+Drag move<br>
+Right click delete<br>
+Mouse wheel zoom<br>
+Paste LUT then Load LUT
 </div>
 
 <div class="card">
@@ -113,32 +115,38 @@ Paste existing LUT
 <canvas id="chart"></canvas>
 
 <button onclick="exportLUT()">Export LUT</button>
+<button onclick="importLUT()">Load LUT</button>
 <button onclick="resetLine()">Reset Straight Line</button>
-
-<div id="error"></div>
 
 <textarea id="output"></textarea>
 
 </div>
+
 </div>
 
 <script>
+
+/* ================= SETTINGS ================= */
 
 let dpi=800;
 let poll=1000;
 let zoom=1;
 
+/* RAW ACCEL SAFE DEFAULT */
 let points=[
 {x:0.001,y:1},
 {x:100,y:1}
 ];
 
 const ctx=document.getElementById("chart");
-const errorBox=document.getElementById("error");
+
+/* ================= SPEED SCALE ================= */
 
 function calculateMaxSpeed(){
 return (dpi*poll/8000)*zoom;
 }
+
+/* ================= CHART ================= */
 
 const chart=new Chart(ctx,{
 type:"line",
@@ -173,15 +181,8 @@ plugins:{legend:{display:false}}
 }
 });
 
-/* CURVE MODE */
-function updateCurveMode(){
-chart.data.datasets[0].tension =
-document.getElementById("curveMode").value==="smooth"
-?0.4:0;
-chart.update();
-}
+/* ================= SCALE ================= */
 
-/* SCALE */
 function applyScale(){
 dpi=Number(document.getElementById("dpi").value)||800;
 poll=Number(document.getElementById("poll").value)||1000;
@@ -190,139 +191,170 @@ chart.options.scales.x.max=calculateMaxSpeed();
 chart.update();
 }
 
-/* VALIDATION */
-function validateCurve(){
+/* ================= CURVE STYLE ================= */
 
-if(points.length<2)
-return "Need at least 2 points";
-
-if(points[0].x<=0)
-return "First point X must be greater than 0";
-
-for(let i=0;i<points.length;i++){
-
-const p=points[i];
-
-if(isNaN(p.x)||isNaN(p.y))
-return "Invalid number detected";
-
-if(i>0 && p.x<=points[i-1].x)
-return "X values must increase left to right";
+function updateCurveStyle(){
+chart.data.datasets[0].tension=
+Number(document.getElementById("curveStyle").value);
+chart.update();
 }
 
-return null;
+/* ================= AUTO FIX ENGINE ================= */
+
+function autoFix(){
+
+points=points
+.filter(p=>isFinite(p.x)&&isFinite(p.y));
+
+if(points.length<2){
+points=[
+{x:0.001,y:1},
+{x:calculateMaxSpeed(),y:1}
+];
 }
 
-/* ZOOM */
+points.sort((a,b)=>a.x-b.x);
+
+let lastX=0.001;
+
+for(let p of points){
+
+p.x=Math.max(0.001,p.x);
+
+if(p.x<=lastX)
+p.x=lastX+0.001;
+
+p.y=Math.max(0,Math.min(5,p.y));
+
+lastX=p.x;
+}
+}
+
+/* ================= ZOOM ================= */
+
 ctx.addEventListener("wheel",e=>{
 e.preventDefault();
+
 zoom*=e.deltaY<0?1.1:0.9;
 zoom=Math.max(.2,Math.min(zoom,10));
+
 chart.options.scales.x.max=calculateMaxSpeed();
 chart.update();
 });
 
-/* ADD */
+/* ================= ADD POINT ================= */
+
 ctx.onclick=e=>{
-const r=ctx.getBoundingClientRect();
+if(draggingPoint!==null) return;
 
-let x=chart.scales.x.getValueForPixel(e.clientX-r.left);
-let y=chart.scales.y.getValueForPixel(e.clientY-r.top);
+const rect=ctx.getBoundingClientRect();
 
-points.push({x:Math.max(0.001,x),y});
-sortPoints();
+points.push({
+x:chart.scales.x.getValueForPixel(e.clientX-rect.left),
+y:chart.scales.y.getValueForPixel(e.clientY-rect.top)
+});
+
+autoFix();
 updateChart();
 };
 
-/* DELETE */
+/* ================= DELETE ================= */
+
 ctx.oncontextmenu=e=>{
 e.preventDefault();
+
 const el=chart.getElementsAtEventForMode(
 e,'nearest',{intersect:true},false
 );
+
 if(el.length){
 points.splice(el[0].index,1);
 updateChart();
 }
 };
 
-/* DRAG */
-let drag=null;
+/* ================= DRAG ================= */
+
+let draggingPoint=null;
 
 ctx.onmousedown=e=>{
 const el=chart.getElementsAtEventForMode(
 e,'nearest',{intersect:true},false
 );
-if(el.length) drag=el[0].index;
+if(el.length) draggingPoint=el[0].index;
 };
 
 ctx.onmousemove=e=>{
-if(drag===null) return;
 
-const r=ctx.getBoundingClientRect();
+if(draggingPoint===null) return;
 
-points[drag].x=Math.max(
-0.001,
-chart.scales.x.getValueForPixel(e.clientX-r.left)
-);
+const rect=ctx.getBoundingClientRect();
 
-points[drag].y=
-chart.scales.y.getValueForPixel(e.clientY-r.top);
+points[draggingPoint].x=
+chart.scales.x.getValueForPixel(e.clientX-rect.left);
 
-sortPoints();
+points[draggingPoint].y=
+chart.scales.y.getValueForPixel(e.clientY-rect.top);
+
+autoFix();
 updateChart();
 };
 
-window.onmouseup=()=>drag=null;
+window.onmouseup=()=>draggingPoint=null;
 
-function sortPoints(){
-points.sort((a,b)=>a.x-b.x);
-}
+/* ================= UPDATE ================= */
 
 function updateChart(){
 chart.data.datasets[0].data=points;
 chart.update();
-errorBox.textContent="";
 }
 
-/* IMPORT */
-function importCurve(){
-const text=document.getElementById("importBox").value;
+/* ================= EXPORT SAFE ================= */
 
-const newPts=[];
-
-text.split(";").forEach(p=>{
-if(!p) return;
-const [x,y]=p.split(",").map(Number);
-if(x>0)newPts.push({x,y});
-});
-
-if(newPts.length){
-points=newPts;
-sortPoints();
-updateChart();
-}
-}
-
-/* EXPORT WITH BLOCK */
 function exportLUT(){
 
-const err=validateCurve();
+autoFix();
 
-if(err){
-errorBox.textContent="Export blocked: "+err;
-return;
-}
+const maxX=calculateMaxSpeed();
 
-const text=points
+let clean=[
+{x:0.001,y:1},
+...points,
+{x:maxX,y:1}
+];
+
+clean.sort((a,b)=>a.x-b.x);
+
+clean=clean.filter((p,i,a)=>i===0||p.x>a[i-1].x);
+
+const text=clean
 .map(p=>`${p.x.toFixed(3)},${p.y.toFixed(3)};`)
-.join("");
+.join("\n");
 
 document.getElementById("output").value=text;
-errorBox.textContent="Export successful";
 }
 
-/* RESET */
+/* ================= IMPORT ================= */
+
+function importLUT(){
+
+const text=document.getElementById("output").value.trim();
+if(!text) return;
+
+points=text.split(";")
+.filter(v=>v.trim())
+.map(line=>{
+const [x,y]=line.split(",");
+return {x:parseFloat(x),y:parseFloat(y)};
+})
+.filter(p=>isFinite(p.x)&&isFinite(p.y));
+
+autoFix();
+updateChart();
+}
+
+/* ================= RESET ================= */
+
 function resetLine(){
 points=[
 {x:0.001,y:1},
