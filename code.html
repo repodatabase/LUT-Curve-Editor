@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Raw Accel LUT Curve Maker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+    background:#000;
+    color:#fff;
+    font-family:Arial;
+    margin:0;
+    text-align:center;
+}
+
+header{
+    padding:20px;
+    background:#111;
+    font-size:26px;
+}
+
+.credit{
+    font-size:14px;
+    color:#aaa;
+}
+
+.container{
+    width:90%;
+    max-width:1000px;
+    margin:auto;
+}
+
+.card{
+    background:#111;
+    padding:20px;
+    margin-top:20px;
+    border-radius:12px;
+}
+
+input{
+    background:#000;
+    color:#fff;
+    border:1px solid #333;
+    padding:6px;
+    margin:5px;
+    width:100px;
+}
+
+button{
+    margin:8px;
+    padding:10px 16px;
+    background:#fff;
+    color:#000;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+}
+
+textarea{
+    width:100%;
+    height:120px;
+    background:#000;
+    color:#fff;
+    border:1px solid #333;
+    margin-top:10px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+Raw Accel LUT Curve Maker
+<div class="credit">Made by @igneswr</div>
+</header>
+
+<div class="container">
+
+<div class="card">
+DPI
+<input id="dpi" value="800">
+
+Poll Rate
+<input id="poll" value="1000">
+
+<button onclick="applyScale()">Apply Scale</button>
+</div>
+
+<div class="card">
+Guide<br>
+Click to add point<br>
+Drag to move<br>
+Right click to delete<br>
+Mouse wheel to zoom graph
+</div>
+
+<div class="card">
+
+<canvas id="chart"></canvas>
+
+<button onclick="exportLUT()">Export LUT</button>
+<button onclick="resetLine()">Reset Straight Line</button>
+
+<textarea id="output"></textarea>
+
+</div>
+
+</div>
+
+<script>
+
+let dpi = 800;
+let poll = 1000;
+let zoom = 1;
+
+/* straight line default */
+let points = [
+    {x:0,y:1},
+    {x:100,y:1}
+];
+
+const ctx=document.getElementById("chart");
+
+/* estimate max speed similar idea to raw accel */
+function calculateMaxSpeed(){
+    return (dpi * poll / 8000) * zoom;
+}
+
+const chart=new Chart(ctx,{
+type:"line",
+data:{
+datasets:[{
+label:"Curve",
+data:points,
+parsing:false,
+borderColor:"white",
+pointRadius:6,
+tension:0
+}]
+},
+options:{
+responsive:true,
+scales:{
+x:{
+type:"linear",
+min:0,
+max:calculateMaxSpeed(),
+ticks:{color:"white"},
+grid:{color:"#222"}
+},
+y:{
+min:0,
+max:2,
+ticks:{color:"white"},
+grid:{color:"#222"}
+}
+},
+plugins:{
+legend:{labels:{color:"white"}}
+}
+}
+});
+
+/* APPLY DPI SCALE */
+function applyScale(){
+dpi=Number(document.getElementById("dpi").value);
+poll=Number(document.getElementById("poll").value);
+
+chart.options.scales.x.max=calculateMaxSpeed();
+chart.update();
+}
+
+/* ZOOM WITH MOUSE */
+ctx.addEventListener("wheel",function(e){
+e.preventDefault();
+
+if(e.deltaY<0) zoom*=1.1;
+else zoom/=1.1;
+
+zoom=Math.max(0.2,Math.min(zoom,10));
+
+chart.options.scales.x.max=calculateMaxSpeed();
+chart.update();
+});
+
+/* ADD POINT */
+ctx.onclick=function(evt){
+
+const rect=ctx.getBoundingClientRect();
+
+const x=chart.scales.x.getValueForPixel(evt.clientX-rect.left);
+const y=chart.scales.y.getValueForPixel(evt.clientY-rect.top);
+
+points.push({x,y});
+sortPoints();
+updateChart();
+};
+
+/* DELETE */
+ctx.oncontextmenu=function(e){
+e.preventDefault();
+
+const elements=
+chart.getElementsAtEventForMode(
+e,'nearest',{intersect:true},false
+);
+
+if(elements.length){
+points.splice(elements[0].index,1);
+updateChart();
+}
+};
+
+/* DRAG */
+let draggingPoint=null;
+
+ctx.onmousedown=function(e){
+const elements=
+chart.getElementsAtEventForMode(
+e,'nearest',{intersect:true},false
+);
+
+if(elements.length)
+draggingPoint=elements[0].index;
+};
+
+ctx.onmousemove=function(e){
+
+if(draggingPoint===null) return;
+
+const rect=ctx.getBoundingClientRect();
+
+points[draggingPoint].x=
+chart.scales.x.getValueForPixel(e.clientX-rect.left);
+
+points[draggingPoint].y=
+chart.scales.y.getValueForPixel(e.clientY-rect.top);
+
+sortPoints();
+updateChart();
+};
+
+window.onmouseup=function(){
+draggingPoint=null;
+};
+
+function sortPoints(){
+points.sort((a,b)=>a.x-b.x);
+}
+
+function updateChart(){
+chart.data.datasets[0].data=points;
+chart.update();
+}
+
+/* EXPORT LUT */
+function exportLUT(){
+let text=points
+.map(p=>`${p.x.toFixed(3)},${p.y.toFixed(3)};`)
+.join("");
+
+document.getElementById("output").value=text;
+}
+
+/* RESET */
+function resetLine(){
+points=[
+{x:0,y:1},
+{x:calculateMaxSpeed(),y:1}
+];
+updateChart();
+}
+
+updateChart();
+
+</script>
+
+</body>
+</html>
