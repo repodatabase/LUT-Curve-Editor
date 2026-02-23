@@ -17,6 +17,18 @@ body{
 header{
     padding:20px;
     background:#111;
+}
+
+.logo{
+    width:80px;
+    height:80px;
+    border-radius:50%;
+    object-fit:cover;
+    margin-bottom:8px;
+    box-shadow:0 0 15px rgba(255,255,255,.2);
+}
+
+.title{
     font-size:26px;
 }
 
@@ -38,13 +50,12 @@ header{
     border-radius:12px;
 }
 
-input{
+input,select{
     background:#000;
     color:#fff;
     border:1px solid #333;
     padding:6px;
     margin:5px;
-    width:100px;
 }
 
 button{
@@ -71,8 +82,13 @@ textarea{
 <body>
 
 <header>
-Raw Accel LUT Curve Maker
+
+<img class="logo"
+src="https://yt3.googleusercontent.com/G3NBG71dzJtbQ3ae2ERcVDRvXGEHaAlCO43-fnO-uilXeikc5mYWp2p2k4owzc4S5n0brzNC=s160-c-k-c0x00ffffff-no-rj">
+
+<div class="title">Raw Accel LUT Curve Maker</div>
 <div class="credit">Made by @igneswr</div>
+
 </header>
 
 <div class="container">
@@ -84,15 +100,23 @@ DPI
 Poll Rate
 <input id="poll" value="1000">
 
+Curve Style
+<select id="curveStyle" onchange="updateCurveStyle()">
+<option value="0">Sharp Linear</option>
+<option value="0.4">Smooth</option>
+<option value="0.8">Very Smooth</option>
+</select>
+
 <button onclick="applyScale()">Apply Scale</button>
 </div>
 
 <div class="card">
 Guide<br>
-Click to add point<br>
-Drag to move<br>
-Right click to delete<br>
-Mouse wheel to zoom graph
+Click add point<br>
+Drag smoothly to move<br>
+Right click delete<br>
+Mouse wheel zoom<br>
+Paste LUT to import
 </div>
 
 <div class="card">
@@ -100,9 +124,10 @@ Mouse wheel to zoom graph
 <canvas id="chart"></canvas>
 
 <button onclick="exportLUT()">Export LUT</button>
+<button onclick="importLUT()">Load LUT</button>
 <button onclick="resetLine()">Reset Straight Line</button>
 
-<textarea id="output"></textarea>
+<textarea id="output" placeholder="LUT output or paste LUT here"></textarea>
 
 </div>
 
@@ -110,21 +135,20 @@ Mouse wheel to zoom graph
 
 <script>
 
-let dpi = 800;
-let poll = 1000;
-let zoom = 1;
+let dpi=800;
+let poll=1000;
+let zoom=1;
 
-/* straight line default */
-let points = [
-    {x:0,y:1},
-    {x:100,y:1}
+let points=[
+{x:0,y:1},
+{x:100,y:1}
 ];
 
 const ctx=document.getElementById("chart");
 
-/* estimate max speed similar idea to raw accel */
+/* RAW ACCEL STYLE SPEED SCALE */
 function calculateMaxSpeed(){
-    return (dpi * poll / 8000) * zoom;
+return (dpi*poll/8000)*zoom;
 }
 
 const chart=new Chart(ctx,{
@@ -140,6 +164,7 @@ tension:0
 }]
 },
 options:{
+animation:false,
 responsive:true,
 scales:{
 x:{
@@ -162,70 +187,74 @@ legend:{labels:{color:"white"}}
 }
 });
 
-/* APPLY DPI SCALE */
+/* SCALE */
 function applyScale(){
-dpi=Number(document.getElementById("dpi").value);
+dpi=Number(dpi.value||document.getElementById("dpi").value);
 poll=Number(document.getElementById("poll").value);
 
 chart.options.scales.x.max=calculateMaxSpeed();
 chart.update();
 }
 
-/* ZOOM WITH MOUSE */
-ctx.addEventListener("wheel",function(e){
+/* CURVE STYLE */
+function updateCurveStyle(){
+chart.data.datasets[0].tension=
+Number(document.getElementById("curveStyle").value);
+chart.update();
+}
+
+/* ZOOM */
+ctx.addEventListener("wheel",e=>{
 e.preventDefault();
 
-if(e.deltaY<0) zoom*=1.1;
-else zoom/=1.1;
-
-zoom=Math.max(0.2,Math.min(zoom,10));
+zoom*=e.deltaY<0?1.1:0.9;
+zoom=Math.max(.2,Math.min(zoom,10));
 
 chart.options.scales.x.max=calculateMaxSpeed();
 chart.update();
 });
 
 /* ADD POINT */
-ctx.onclick=function(evt){
+ctx.onclick=e=>{
+
+if(draggingPoint!==null) return;
 
 const rect=ctx.getBoundingClientRect();
 
-const x=chart.scales.x.getValueForPixel(evt.clientX-rect.left);
-const y=chart.scales.y.getValueForPixel(evt.clientY-rect.top);
+points.push({
+x:chart.scales.x.getValueForPixel(e.clientX-rect.left),
+y:chart.scales.y.getValueForPixel(e.clientY-rect.top)
+});
 
-points.push({x,y});
 sortPoints();
 updateChart();
 };
 
 /* DELETE */
-ctx.oncontextmenu=function(e){
+ctx.oncontextmenu=e=>{
 e.preventDefault();
 
-const elements=
-chart.getElementsAtEventForMode(
+const el=chart.getElementsAtEventForMode(
 e,'nearest',{intersect:true},false
 );
 
-if(elements.length){
-points.splice(elements[0].index,1);
+if(el.length){
+points.splice(el[0].index,1);
 updateChart();
 }
 };
 
-/* DRAG */
+/* SMOOTH DRAG FIX */
 let draggingPoint=null;
 
-ctx.onmousedown=function(e){
-const elements=
-chart.getElementsAtEventForMode(
+ctx.onmousedown=e=>{
+const el=chart.getElementsAtEventForMode(
 e,'nearest',{intersect:true},false
 );
-
-if(elements.length)
-draggingPoint=elements[0].index;
+if(el.length) draggingPoint=el[0].index;
 };
 
-ctx.onmousemove=function(e){
+ctx.onmousemove=e=>{
 
 if(draggingPoint===null) return;
 
@@ -241,10 +270,9 @@ sortPoints();
 updateChart();
 };
 
-window.onmouseup=function(){
-draggingPoint=null;
-};
+window.onmouseup=()=>draggingPoint=null;
 
+/* HELPERS */
 function sortPoints(){
 points.sort((a,b)=>a.x-b.x);
 }
@@ -254,13 +282,30 @@ chart.data.datasets[0].data=points;
 chart.update();
 }
 
-/* EXPORT LUT */
+/* EXPORT */
 function exportLUT(){
-let text=points
+const text=points
 .map(p=>`${p.x.toFixed(3)},${p.y.toFixed(3)};`)
 .join("");
 
 document.getElementById("output").value=text;
+}
+
+/* IMPORT EXISTING LUT */
+function importLUT(){
+
+const text=document.getElementById("output").value.trim();
+if(!text) return;
+
+const entries=text.split(";").filter(v=>v);
+
+points=entries.map(line=>{
+const [x,y]=line.split(",");
+return {x:parseFloat(x),y:parseFloat(y)};
+});
+
+sortPoints();
+updateChart();
 }
 
 /* RESET */
